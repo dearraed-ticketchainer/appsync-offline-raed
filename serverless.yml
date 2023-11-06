@@ -1,0 +1,175 @@
+service: appsync-raed-dynamo-offline
+frameworkVersion: '3'
+
+plugins:
+  - serverless-better-credentials
+  - serverless-dynamodb
+  - serverless-appsync-simulator
+  - serverless-appsync-plugin
+  - serverless-offline
+
+provider:
+  name: aws
+  profile: sso-dev
+  runtime: nodejs18.x
+  environment:
+    tableName: ${self:custom.tableName}
+    IS_OFFLINE: ${self:custom.IS_OFFLINE}
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+            - dynamodb:*
+            - s3:*
+            - ses:*
+      Resource: '*'
+
+custom:
+   tableName: raed-appsync-offline-dynamo-table
+   IS_OFFLINE: true
+   dynamodb: 
+       stages:
+         - dev
+       start:
+         port: 8000
+         inMemory: true
+         migrate: true
+       migration:
+           dir: offline/migrations
+   appSync:
+    name: RaedAppSyncAPI
+    authenticationType: API_KEY
+    schema: 'schemas/schema.graphql'
+    resolvers:
+      - type: Mutation
+        field: createPost
+        request: queries/createPost.req.vtl
+        response: queries/createPost.res.vtl
+        dataSource: RaedLambdaDataSource # Name of the data source
+        functionName: RaedLambdaFunctionName # Name of the Lambda function
+    
+
+# appSync:
+#   name: raed-api-appsync-3-dynamo-offline
+#   schema: 'schemas/*.graphql'
+#   authentication:
+#     type: API_KEY
+#   dataSources:
+#     raedDatasource:
+#       type: 'AWS_LAMBDA'
+#       config:
+#         function:
+#           timeout: 30
+#           handler: 'functions/getPost.handler'
+#     raedDatasourceCreatePost2:
+#       type: 'AWS_LAMBDA'
+#       config:
+#         function:
+#           timeout: 30
+#           handler: 'functions/createPostDb.handler'
+#     raedDatasourceGetPost:
+#       type: 'AWS_LAMBDA'
+#       config:
+#         function:
+#           timeout: 30
+#           handler: 'functions/getPostDb.handler'
+#   pipelineFunctions:
+#     getPost:
+#       handler: functions/getPost.handler
+#       dataSource: raedDatasource
+#     createPostDb:
+#       handler: functions/createPostDb.handler
+#       dataSource: raedDatasourceCreatePost2
+#     getPostDb:
+#       handler: functions/getPostDb.handler
+#       dataSource: raedDatasourceGetPost
+#   resolvers:
+#     Query.singlePost:
+#       type: Query
+#       field: singlePost
+#       functions:
+#         - getPost
+#     Mutation.putPost:
+#       type: Mutation
+#       field: putPost
+#       functions:
+#         - createPostDb
+#     Query.getPostQuery:
+#       type: Query
+#       field: getPostQuery
+#       functions:
+#         - getPostDb
+
+resources:
+  Resources:
+    RaedDynamoDbTable:
+          Type: AWS::DynamoDB::Table
+          Properties:
+              TableName: ${self:custom.tableName}
+              AttributeDefinitions:
+                  - AttributeName: ID
+                    AttributeType: S
+              KeySchema:
+                  - AttributeName: ID
+                    KeyType: HASH
+              BillingMode: PAY_PER_REQUEST
+    RaedLambdaDataSource:
+      Type: 'AWS::AppSync::DataSource'
+      Properties:
+        ApiId:
+          Fn::GetAtt:
+            - RaedAppSyncAPI
+            - ApiId
+        Name: RaedLambdaDataSource
+        Type: AWS_LAMBDA
+        LambdaConfig:
+          LambdaFunctionArn:
+            Fn::GetAtt:
+              - RaedLambdaFunction
+              - Arn
+    RaedLambdaFunction:
+      Type: 'AWS::Lambda::Function'
+      Properties:
+        FunctionName: RaedLambdaFunctionName
+        Handler: 'functions/createPostDb.handler'
+        Role:
+          Fn::GetAtt:
+            - RaedLambdaFunctionRole
+            - Arn
+        Runtime: nodejs16.x
+        Code:
+          S3Bucket: my-bucket
+          S3Key: my-lambda.zip
+    RaedLambdaFunctionRole:
+      Type: 'AWS::IAM::Role'
+      Properties:
+        RoleName: RaedLambdaFunctionRole
+        AssumeRolePolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - lambda.amazonaws.com
+              Action:
+                - sts:AssumeRole
+        Policies:
+          - PolicyName: RaedLambdaFunctionPolicy
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - logs:CreateLogGroup
+                    - logs:CreateLogStream
+                    - logs:PutLogEvents
+                  Resource: '*'
+
+dataSources:
+  - type: AMAZON_DYNAMODB
+    name: dynamosource
+    config:
+      tableName:
+        Ref: RaedDynamoDbTable
+
+
+ 

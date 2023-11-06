@@ -1,0 +1,10 @@
+#if($context.error)
+  #return($utils.error($context.error.message, "LambdaFunctionError", $context.error))
+#end
+
+#set($response = $util.parseJson($context.result))
+{
+  "data": {
+    "createPost": $response   # Assuming the result directly matches the query
+  }
+}

@@ -1,0 +1,5 @@
+#set($context.request = {
+  "operation": "createPost",   # Custom operation name to identify the Lambda function
+  "version": "2017-02-28",       # AWS Lambda invocation payload version
+  "payload": $util.toJson($context.arguments)  # Pass GraphQL query arguments as payload
+})
